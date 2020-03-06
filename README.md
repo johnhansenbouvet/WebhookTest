@@ -61,3 +61,146 @@ In GitHub, you can set the secret field by going to the repository where you hav
 ## Validating payloads from GitHub
 When your secret token is set, GitHub uses it to create a hash signature for each payload. This hash signature is passed along with each request in the headers as x-hub-signature.
 When your function receives a request, you need to compute the hash using your secret, and ensure that it matches the hash in the request header. GitHub uses an HMAC SHA1 hex digest to compute the hash, so you must calculate your hash in this same way, using the key of your secret and your payload body. The hash signature starts with the text sha1=.
+
+
+
+Exercise - Secure webhook payloads with a secret
+10 minutes
+Sandkasse aktivert! Tid som gjenstår: 
+1 t 35 min 
+Du har brukt 3 av 10 sandbokser for i dag. Flere sandkasser vil være tilgjengelig i morgen.
+In this exercise, you'll protect your webhook payload with a secret, and learn how to validate payloads from GitHub inside an Azure Function.
+Get Key for your Azure Function
+In the Azure portal, return to your function app that you created from the first exercise in the module.
+Expand Functions.
+Select the function that you created.
+In your function's index.js JavaScript file, add a reference to the crypto-js library at the start of the file, above the module.exports statement.
+JavaScript
+
+Kopier
+
+var Crypto = require('crypto');
+In the side menu, select Manage.
+In the Function Keys section, select Click to show next to the default key.
+Under Actions, select Copy and save this key for use in the next step.
+Back in the body of your function, after the context.log statement, add the following code. Replace *<default key> with the default key that you copied to the clipboard earlier:
+JavaScript
+
+Kopier
+
+var hmac = Crypto.createHmac("sha1", "<default key>");
+var signature = hmac.update(JSON.stringify(req.body)).digest('hex');
+This code computes the hash of the key, using the same mechanism as GitHub.
+Add sha1= to the start of the key, so that it matches the format of x-hub-signature in the request header. Add the following code to your function.
+JavaScript
+
+Kopier
+
+var shaSignature =  `sha1=${signature}`;
+Add the following code to retrieve the GitHub signature from the request header:
+JavaScript
+
+Kopier
+
+var gitHubSignature = req.headers['x-hub-signature'];
+Compare the two strings. If they match, process the request, as follows:
+JavaScript
+
+Kopier
+
+if (!shaSignature.localeCompare(gitHubSignature)) {
+    // Existing code
+    if (req.body.pages[0].title) {
+        ...
+    }
+    else {
+        ...
+    }
+}
+If the strings don't match, return an HTTP 401 (Unauthorized) response, with a message telling the sender that the signatures don't match.
+JavaScript
+
+Kopier
+
+if (!shaSignature.localeCompare(gitHubSignature))
+{
+    ...
+}
+else {
+    context.res = {
+        status: 401,
+        body: "Signatures don't match"
+    };
+}
+
+Select Save.
+The completed function should look like this:
+JavaScript
+
+Kopier
+
+var Crypto = require('crypto');
+
+module.exports = async function (context, req) {
+    context.log('JavaScript HTTP trigger function processed a request.');
+
+    var hmac = Crypto.createHmac("sha1", "<default key>");
+    var signature = hmac.update(JSON.stringify(req.body)).digest('hex');
+    var shaSignature =  `sha1=${signature}`;
+    var gitHubSignature = req.headers['x-hub-signature'];
+
+    if (!shaSignature.localeCompare(gitHubSignature)) {
+        if (req.body.pages[0].title) {
+            context.res = {
+                body: "Page is " + req.body.pages[0].title + ", Action is " + req.body.pages[0].action + ", Event Type is " + req.headers['x-github-event']
+            };
+        }
+        else {
+            context.res = {
+                status: 400,
+                body: ("Invalid payload for Wiki event")
+            }
+        }
+    }
+    else {
+        context.res = {
+            status: 401,
+            body: "Signatures don't match"
+        }; 
+    }
+};
+Update the webhook secret
+Switch to your GitHub account in the GitHub portal.
+Select your repository.
+Select the Settings tab.
+Select Webhooks in the navigation panel.
+Select the Edit button next to your webhook.
+In the Secret text box, enter the default key from your function that you saved earlier in this exercise.
+At the bottom of the page, select Update webhook.
+Test the webhook and the Azure Function
+On the webhooks page, scroll down to the Recent Deliveries section.
+Select the latest delivery entry by clicking the ellipsis (...) button.
+Click Redeliver, and then select Yes, redeliver this payload.
+This action simulates you changing your Wiki page again.
+In the header, you'll see the x-hub-signature. You'll also see that the response code is 200, indicating that the request was processed successfully.
+text
+
+Kopier
+
+Request URL: https://testwh123456.azurewebsites.net/api/HttpTrigger1?code=aUjXIpqdJ0ZHPQuB0SzFegxGJu0nAXmsQBnmkCpJ6RYxleRaoxJ8cQ%3D%3D
+Request method: POST
+content-type: application/json
+Expect: 
+User-Agent: GitHub-Hookshot/16496cb
+X-GitHub-Delivery: ce122460-6aae-11e9-99d4-de6a298a424a
+X-GitHub-Event: gollum
+X-Hub-Signature: sha1=<hash of default key>
+Test an invalid signature
+In the GitHub portal, on the webhooks page, scroll up to the Secret test box and then select Edit.
+Enter a random string, scroll down, and then select Update webhook.
+The key used by the webhook should no longer match that expected by the Azure function.
+Scroll down to the Recent Deliveries section.
+Select the latest delivery entry by selecting the ellipsis (...) button.
+Select Redeliver, and then Yes, redeliver this payload.
+This time, you'll see that the response code is 401, indicating that the request was not authorized.
+Select the Response tab, and verify that the message "Signatures don't match" appears as the body of the response.
